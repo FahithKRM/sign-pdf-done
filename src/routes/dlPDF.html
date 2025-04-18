@@ -1,0 +1,47 @@
+import download from 'downloadjs';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { readAsArrayBuffer } from './pdfReader';
+
+export async function save(pdfFile, objects, name, pagesScale) {
+	try {
+		const pdfBuffer = await readAsArrayBuffer(pdfFile);
+		const pdfDoc = await PDFDocument.load(pdfBuffer);
+		const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+		const courierFont = await pdfDoc.embedFont(StandardFonts.Courier);
+
+		const pages = pdfDoc.getPages();
+		for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+			const page = pages[pageIndex];
+			const { height } = page.getSize();
+			const scale = pagesScale[pageIndex] || 1;
+
+			const pageObjects = objects[pageIndex] || [];
+			pageObjects.forEach((object) => {
+				let font = timesRomanFont;
+				if (object.fontFamily === 'Courier') font = courierFont;
+
+				if (object.type === 'drawing' && object.path) {
+					page.drawSvgPath(object.path, {
+						borderWidth: 5,
+						scale: object.scale * scale,
+						x: object.x / scale,
+						y: (height - object.y) / scale
+					});
+				} else if (object.type === 'text') {
+					page.drawText(object.text, {
+						x: object.x / scale,
+						y: (height - object.y - object.size) / scale,
+						size: object.size / scale,
+						font
+					});
+				}
+			});
+		}
+
+		const pdfBytes = await pdfDoc.save();
+		download(pdfBytes, name || 'document.pdf', 'application/pdf');
+	} catch (e) {
+		console.log('Failed to save PDF:', e);
+		throw e;
+	}
+}

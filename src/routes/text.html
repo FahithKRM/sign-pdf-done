@@ -1,0 +1,248 @@
+<svelte:options immutable={true} />
+
+<script>
+	import { onMount, createEventDispatcher } from 'svelte';
+	import { panModify } from '../utils/panModify.js';
+	import { tapout } from '../utils/tapout.js';
+	import { fonts } from '../utils/getFonts.js';
+	export let size;
+	export let text;
+
+	export let x;
+	export let y;
+	export let fontFamily;
+	export let pageScale = 1;
+	const Families = Object.keys(fonts);
+	const dispatch = createEventDispatcher();
+	let startX;
+	let startY;
+	let editable;
+	let _size = size;
+
+	let _fontFamily = fontFamily;
+	let dx = 0;
+	let dy = 0;
+	let operation = '';
+	function handlePanMove(event) {
+		dx = (event.detail.x - startX) / pageScale;
+		dy = (event.detail.y - startY) / pageScale;
+	}
+
+	function handlePanEnd(event) {
+		if (dx === 0 && dy === 0) {
+			return editable.focus();
+		}
+		dispatch('update', {
+			x: x + dx,
+			y: y + dy
+		});
+		dx = 0;
+		dy = 0;
+		operation = '';
+	}
+	function handlePanStart(event) {
+		startX = event.detail.x;
+		startY = event.detail.y;
+		operation = 'move';
+	}
+	function onFocus() {
+		operation = 'edit';
+	}
+	async function onBlur() {
+		if (operation !== 'edit' || operation === 'tool') return;
+		editable.blur();
+		sanitize();
+		dispatch('update', {
+			lines: extractLines(),
+			width: editable.clientWidth
+		});
+		operation = '';
+	}
+	async function onPaste(e) {
+		// get text only
+		const pastedText = e.clipboardData.getData('text');
+		document.execCommand('insertHTML', false, pastedText);
+		// await tick() is not enough
+		return await new Promise((res) => setTimeout(res, ms));
+		sanitize();
+	}
+	function onKeydown(e) {
+		const childNodes = Array.from(editable.childNodes);
+		if (e.keyCode === 13) {
+			// prevent default adding div behavior
+			e.preventDefault();
+			const selection = window.getSelection();
+			const focusNode = selection.focusNode;
+			const focusOffset = selection.focusOffset;
+			// the caret is at an empty line
+			if (focusNode === editable) {
+				editable.insertBefore(document.createElement('br'), childNodes[focusOffset]);
+			} else if (focusNode instanceof HTMLBRElement) {
+				editable.insertBefore(document.createElement('br'), focusNode);
+			}
+			// the caret is at a text line but not end
+			else if (focusNode.textContent.length !== focusOffset) {
+				document.execCommand('insertHTML', false, '<br>');
+				// the carat is at the end of a text line
+			} else {
+				let br = focusNode.nextSibling;
+				if (br) {
+					editable.insertBefore(document.createElement('br'), br);
+				} else {
+					br = editable.appendChild(document.createElement('br'));
+					br = editable.appendChild(document.createElement('br'));
+				}
+				// set selection to new line
+				selection.collapse(br, 0);
+			}
+		}
+	}
+	function onFocusTool() {
+		operation = 'tool';
+	}
+	async function onBlurTool() {
+		if (operation !== 'tool' || operation === 'edit') return;
+		dispatch('update', {
+			lines: extractLines(),
+
+			size: _size,
+			fontFamily: _fontFamily
+		});
+		operation = '';
+	}
+	function sanitize() {
+		let weirdNode;
+		while (
+			(weirdNode = Array.from(editable.childNodes).find(
+				(node) => !['#text', 'BR'].includes(node.nodeName)
+			))
+		) {
+			editable.removeChild(weirdNode);
+		}
+	}
+	function onChangeFont() {
+		dispatch('selectFont', {
+			name: _fontFamily
+		});
+	}
+	function render() {
+		editable.innerHTML = text;
+		editable.focus();
+	}
+	function extractLines() {
+		const nodes = editable.childNodes;
+		const lines = [];
+		let lineText = '';
+		for (let index = 0; index < nodes.length; index++) {
+			const node = nodes[index];
+			console.log('node' + node.nodeName);
+			console.log(nodes);
+			if (node.nodeName === 'BR') {
+				lines.push(lineText);
+				lineText = '';
+			} else if (node.nodeName === 'BR') {
+				lines.push(lineText);
+				lineText = '';
+			} else {
+				lineText += node.textContent;
+			}
+		}
+		lines.push(lineText);
+		return lines;
+	}
+	function onDelete() {
+		dispatch('delete');
+	}
+	onMount(render);
+
+	let portal;
+	$: portal && document.body.appendChild(portal);
+</script>
+
+<!-- {#if operation}
+	<div bind:this={portal}>
+		<div class="fixed z-10 top-0 left-0 right-0 h-12 bg-sky-800">
+			<div
+				use:tapout
+				on:tapout={onBlurTool}
+				on:mousedown={onFocusTool}
+				on:touchstart={onFocusTool}
+				class="fixed z-10 top-0 left-0 right-0 h-12 border-b flex justify-center items-center"
+			>
+				<div class="mr-2 flex items-center rounded-sm bg-white px-1">
+					<i class="fa-solid fa-a fa-xs"></i>
+					<i class="fa-solid fa-a"></i>
+					<input
+						type="number"
+						min="12"
+						max="120"
+						step="1"
+						class="h-6 w-12 text-center flex-shrink-0 focus:outline-none"
+						bind:value={_size}
+					/>
+				</div>
+				<div class="mr-2 flex items-center bg-white">
+					<div class="relative w-32 md:w-40 flex items-center px-1 rounded-sm">
+						<i class="fa-solid fa-a"></i>
+						<select
+							bind:value={_fontFamily}
+							on:change={onChangeFont}
+							class="font-family focus:outline-none"
+						>
+							{#each Families as family}
+								<option class=" " value={family}>{family} </option>
+							{/each}
+						</select>
+						<div
+							class="pointer-events-none absolute inset-y-0 right-0 flex
+            items-center px-2 text-white"
+						></div>
+					</div>
+				</div>
+
+				<div on:click={onDelete} class="cursor-pointer">
+					<i class="fa-solid fa-circle-xmark text-white" aria-hidden="true"></i>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if} -->
+
+<div
+	use:tapout
+	on:tapout={onBlur}
+	class="absolute left-0 top-0 select-none"
+	style="transform: translate({x + dx}px, {y + dy}px);"
+>
+	<div
+		use:panModify
+		on:panstart={handlePanStart}
+		on:panmove={handlePanMove}
+		on:panend={handlePanEnd}
+		class="absolute w-full h-full cursor-grab border-2 border-solid rounded-md
+    border-gray-500"
+		class:cursor-grab={!operation}
+		class:cursor-grabbing={operation === 'move'}
+		class:editing={['edit', 'tool'].includes(operation)}
+	/>
+	<div
+		bind:this={editable}
+		on:focus={onFocus}
+		on:keydown={onKeydown}
+		on:paste|preventDefault={onPaste}
+		contenteditable="!true"
+		spellcheck="false"
+		class="outline-none m-1 whitespace-pre text-gray-700"
+		style="font-size: {_size}px; font-family: '{_fontFamily}', serif; text-gray-700;
+    line-height: 1.4; -webkit-user-select: text;"
+	/>
+</div>
+
+<style>
+	/* .editing {
+		@apply pointer-events-none border-sky-800 border-2 border-solid rounded-md;
+	} */
+	.font-family {
+		@apply block appearance-none h-6 w-full bg-white pl-2 pr-8 rounded-sm leading-tight;
+	}
+</style>

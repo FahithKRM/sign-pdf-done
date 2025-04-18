@@ -1,0 +1,23 @@
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/build/pdf';
+
+GlobalWorkerOptions.workerSrc = 'node_modules/pdfjs-dist/build/pdf.worker.min.js';
+
+export function readAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+export async function readAsPDF(file) {
+    try {
+        const arrayBuffer = await readAsArrayBuffer(file);
+        const pdf = await getDocument({ data: arrayBuffer }).promise;
+        return pdf;
+    } catch (error) {
+        console.error('Error reading PDF:', error);
+        throw error;
+    }
+}
