@@ -2,23 +2,20 @@
     import Swal from 'sweetalert2';
     import { v4 as uuidv4 } from 'uuid';
     import '@fortawesome/fontawesome-free/css/all.min.css';
+    import axios from 'axios';
     import DrawingCanvas from '../../components/DrawingCanvas.svelte';
     import PDFPage from '../../components/PDFPage.svelte';
     import Drawing from '../../components/Drawing.svelte';
     import Text from '../../components/Text.svelte';
     import { fetchFont } from '../../utils/getFonts.js';
     import { readAsPDF, extractTextFromPDF, readAsArrayBuffer } from '../../utils/pdfReader.js';
-    import { save } from '../../utils/dlPDF.js';
     import '../../app.css';
     import ToolBar from '../../components/ToolBar.svelte';
     import InputTags from '../../components/InputTags.svelte';
-    import TemplateList from '../../components/TemplateList.svelte';
-    import UsedTemplateList from '../../components/UsedTemplateList.svelte';
     import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-
+  
     let pdfFile;
     let pdfName = '';
-    let description = '';
     let pages = [];
     let pagesScale = [];
     let allObjects = [];
@@ -28,7 +25,6 @@
     let currentpage = null;
     let currentindex = 0;
     let currentObject = null;
-    let showList = false;
     $: show = selectedPageIndex < 0 ? 'hidden' : '';
     let currentFont = 'Times-Roman';
     let textOpened = false;
@@ -40,37 +36,32 @@
     let detectedTags = [];
     let signaturePending = false;
     let modifiedPdf = false;
-    let templates = [];
-
+    let processedPdfs = [];
+  
     let tagCounters = {
         text: 0,
         signature: 0,
         number: 0,
         email: 0
     };
-
+  
     let portal;
     $: portal && document.body.appendChild(portal);
-
-    async function loadTemplates() {
-        const response = await fetch('http://localhost:3000/templates');
-        templates = await response.json();
-    }
-
-    async function selectTemplate(template) {
-        const response = await fetch(template.filePath);
-        const arrayBuffer = await response.arrayBuffer();
-        const file = new File([arrayBuffer], template.name, { type: 'application/pdf' });
+  
+    async function onUploadPDF(e) {
+        const files = e.target.files || (e.dataTransfer && e.dataTransfer.files);
+        const file = files[0];
+        if (!file || file.type !== 'application/pdf') return;
         selectedPageIndex = -1;
         try {
             await addPDF(file);
             selectedPageIndex = 0;
             await detectTags(file);
         } catch (e) {
-            console.log('Load error:', e);
+            console.log('Upload error:', e);
         }
     }
-
+  
     async function addPDF(file) {
         try {
             const pdf = await readAsPDF(file);
@@ -88,7 +79,7 @@
             throw e;
         }
     }
-
+  
     async function detectTags(file) {
         const pdf = await readAsPDF(file);
         const textByPage = await extractTextFromPDF(pdf);
@@ -100,18 +91,18 @@
         };
         let tagsFound = [];
         tagCounters = { text: 0, signature: 0, number: 0, email: 0 };
-
+  
         for (let index = 0; index < textByPage.length; index++) {
             const pageText = textByPage[index];
             const page = await pdf.getPage(index + 1);
             const textContent = await page.getTextContent();
             const scale = pagesScale[index] || 1;
             const pageHeight = (await page.getViewport({ scale: 1 })).height;
-
+  
             for (const [type, defaultText] of Object.entries(tagDefaults)) {
                 const regex = new RegExp(`${defaultText}\\d+`, 'g');
                 const matches = pageText.match(regex) || [];
-
+  
                 for (const match of matches) {
                     const textItems = textContent.items.filter(item => item.str === match);
                     textItems.forEach((textItem) => {
@@ -132,11 +123,11 @@
                 }
             }
         }
-
+  
         detectedTags = tagsFound;
         console.log('Detected tags:', detectedTags);
     }
-
+  
     function prevPage() {
         if (currentindex > 0) {
             if (modifiedPdf) {
@@ -159,7 +150,7 @@
             }
         }
     }
-
+  
     function nextPage() {
         if (currentindex < pages.length - 1) {
             if (modifiedPdf) {
@@ -182,14 +173,14 @@
             }
         }
     }
-
+  
     function onAddSignature() {
         if (selectedPageIndex >= 0 && signaturePending) {
             addingDrawing = true;
             signaturePending = false;
         }
     }
-
+  
     function addDrawing(originWidth, originHeight, path, scale = 1) {
         const id = uuidv4();
         const object = {
@@ -207,7 +198,7 @@
         addingDrawing = false;
         modifiedPdf = true;
     }
-
+  
     function handleClick(event) {
         const rect = event.target.getBoundingClientRect();
         clickedX = event.clientX - rect.left;
@@ -216,7 +207,7 @@
         mouseY = event.clientY;
         mouseIsWorking = true;
     }
-
+  
     function updateObject(objectId, payload) {
         allObjects = allObjects.map((objects, pIndex) =>
             pIndex === selectedPageIndex
@@ -224,72 +215,57 @@
                 : objects
         );
     }
-
+  
     function deleteObject(objectId) {
         allObjects = allObjects.map((objects, pIndex) =>
             pIndex === selectedPageIndex ? objects.filter((object) => object.id !== objectId) : objects
         );
     }
-
+  
     function onMeasure(scale, i) {
         pagesScale[i] = scale;
     }
-
+  
     async function savePDF() {
         if (!pdfFile || saving || !pages.length) return;
         saving = true;
+  
+        const { value: formValues } = await Swal.fire({
+            title: 'Save Processed PDF',
+            html:
+                '<input id="swal-input1" class="swal2-input" placeholder="PDF Name">' +
+                '<input id="swal-input2" class="swal2-input" placeholder="Description">',
+            focusConfirm: false,
+            preConfirm: () => {
+                return [
+                    document.getElementById('swal-input1').value,
+                    document.getElementById('swal-input2').value
+                ];
+            }
+        });
+    }
+  
+    async function fetchProcessedPdfs() {
         try {
-            await save(pdfFile, allObjects, pdfName, pagesScale);
-            const formData = new FormData();
-            formData.append('file', pdfFile);
-            formData.append('name', pdfName);
-            formData.append('description', description);
-            formData.append('replacements', JSON.stringify(detectedTags.filter(tag => tag.newText).map(tag => ({
-                defaultText: tag.defaultText,
-                newText: tag.newText,
-                x: tag.x,
-                y: tag.y,
-                size: tag.size,
-                page: tag.page
-            }))));
-
-            const response = await fetch('http://localhost:3000/used-templates', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) throw new Error('Failed to save used template');
-            console.log('PDF saved successfully');
-            Swal.fire({
-                title: 'Success!',
-                text: 'PDF saved successfully',
-                icon: 'success',
-                confirmButtonText: 'OK'
-            });
-            modifiedPdf = false;
+            const response = await axios.get('http://localhost:3000/processed-pdfs');
+            processedPdfs = response.data;
         } catch (e) {
-            console.log('Save error:', e);
-            Swal.fire({
-                title: 'Error',
-                text: 'Failed to save PDF',
-                icon: 'error',
-                confirmButtonText: 'OK'
-            });
-        } finally {
-            saving = false;
+            console.log('Fetch processed PDFs error:', e);
         }
     }
+  
 
+  
     async function replaceTextInPDF(pdfFile, pageIndex, oldText, newText, x, y, size, scale) {
         const pdfBuffer = await readAsArrayBuffer(pdfFile);
         const pdfDoc = await PDFDocument.load(pdfBuffer);
         const pages = pdfDoc.getPages();
         const page = pages[pageIndex];
         const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-
+  
         const oldTextWidth = font.widthOfTextAtSize(oldText, size);
         const textHeight = size;
-
+  
         page.drawRectangle({
             x: x,
             y: page.getHeight() - y - textHeight,
@@ -297,7 +273,7 @@
             height: textHeight,
             color: rgb(1, 1, 1),
         });
-
+  
         page.drawText(newText, {
             x: x,
             y: page.getHeight() - y - textHeight,
@@ -305,29 +281,31 @@
             font: font,
             color: rgb(0, 0, 0),
         });
-
+  
+        console.log(`Replacing '${oldText}' with '${newText}' at x:${x}, y:${page.getHeight() - y - textHeight}`);
+  
         const pdfBytes = await pdfDoc.save();
         return pdfBytes;
     }
-
+  
     async function handleTagReplace(event) {
         const { type, page, defaultText, x, y, size, scale, newText } = event.detail;
-
+  
         if (page - 1 !== currentindex) {
             currentindex = page - 1;
             selectedPageIndex = currentindex;
             currentpage = pages[currentindex];
         }
-
+  
         clickedX = x;
         clickedY = y;
-
+  
         if (type === 'signature') {
             signaturePending = true;
             onAddSignature();
             return;
         }
-
+  
         if (type === 'email' && newText && !/\S+@\S+\.\S+/.test(newText)) {
             Swal.fire({
                 title: 'Invalid Email',
@@ -337,7 +315,7 @@
             });
             return;
         }
-
+  
         if (type === 'number' && newText && isNaN(Number(newText))) {
             Swal.fire({
                 title: 'Invalid Number',
@@ -347,9 +325,10 @@
             });
             return;
         }
-
+  
         saving = true;
         try {
+            console.log('Starting tag replacement:', { defaultText, newText, x, y, size });
             const updatedPdfBytes = await replaceTextInPDF(
                 pdfFile, 
                 page - 1, 
@@ -366,12 +345,6 @@
             await addPDF(pdfFile);
             await detectTags(pdfFile);
             
-            detectedTags = detectedTags.map(tag => 
-                tag.defaultText === defaultText && tag.page === page 
-                    ? { ...tag, newText } 
-                    : tag
-            );
-            
             modifiedPdf = true;
             console.log('Replacement successful');
             
@@ -382,71 +355,41 @@
             saving = false;
         }
     }
-
+  
     async function handleSignatureClick(event) {
         const { page, x, y } = event.detail;
-
+  
         if (page - 1 !== currentindex) {
             currentindex = page - 1;
             selectedPageIndex = currentindex;
             currentpage = pages[currentindex];
         }
-
+  
         clickedX = x;
         clickedY = y;
-
+  
         signaturePending = true;
         onAddSignature();
     }
-
-    loadTemplates();
-</script>
-
-<main>
+  
+    // Fetch processed PDFs on component mount
+    fetchProcessedPdfs();
+  </script>
+  
+  <svelte:window
+    on:dragenter|preventDefault
+    on:dragover|preventDefault
+    on:drop|preventDefault={onUploadPDF}
+  />
+  
+  <main>
     <InputTags {detectedTags} on:replaceTag={handleTagReplace} on:signatureClicked={handleSignatureClick} />
     <div class="right-container">
         <ToolBar />
         <div class="edit-container">
-            <div class="top-bar">
-                <div
-                    class="tools justify-center mx-3 md:mr-4 w-full max-w-xs hidden md:flex items-center bg-sky-800 rounded p-1 md:{show}"
-                >
-                    <i class="fa-solid fa-pencil text-white"></i>
-                    <input
-                        placeholder="Rename your PDF here"
-                        type="text"
-                        class="flex-grow bg-transparent ml-2 placeholder:text-white focus:outline-none text-white"
-                        bind:value={pdfName}
-                    />
-                </div>
-                <input
-                    placeholder="Description"
-                    type="text"
-                    class="tools flex-grow bg-sky-800 text-white p-1 rounded mr-3"
-                    bind:value={description}
-                />
-                <button
-                    on:click={() => (showList = !showList)}
-                    class="tools flex items-center w-24 bg-sky-800 hover:bg-sky-600 text-white font-bold py-1 px-3 md:px-4 mr-3 md:mr-4 rounded"
-                >
-                    <i class="fa-solid fa-list me-1"></i> Templates
-                </button>
-                <button
-                    on:click={savePDF}
-                    class="tools flex items-center w-24 bg-sky-800 hover:bg-sky-600 text-white font-bold py-1 px-3 md:px-4 mr-3 md:mr-4 rounded {show}"
-                    class:cursor-not-allowed={pages.length === 0 || saving || !pdfFile}
-                    class:bg-blue-700={pages.length === 0 || saving || !pdfFile}
-                >
-                    <i class="fa-solid fa-download me-1"></i>{saving ? 'Saving' : 'Save'}
-                </button>
-            </div>
-
-            {#if showList}
-                <div>
-                    <TemplateList {templates} on:select={e => selectTemplate(e.detail)} />
-                    <UsedTemplateList />
-                </div>
-            {:else if addingDrawing}
+         
+  
+            {#if addingDrawing}
                 <div
                     class="fixed z-10 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 border-2 border-dashed border-sky-800 bg-white shadow-lg rounded-lg"
                     style="height: 50%; width:500px;"
@@ -463,8 +406,10 @@
                         on:cancel={() => (addingDrawing = false)}
                     />
                 </div>
-            {:else if pages.length}
-                <div
+            {/if}
+  
+            {#if pages.length}
+                <!-- <div
                     class="flex justify-center items-center px-5 w-full md:hidden bg-sky-800 rounded-sm py-1"
                 >
                     <i class="fa-solid fa-pencil text-white me-3"></i>
@@ -474,8 +419,8 @@
                         class="flex-grow bg-transparent text-white"
                         bind:value={pdfName}
                     />
-                </div>
-
+                </div> -->
+  
                 <div
                     class="pdf-container p-5 w-full flex flex-col items-center overflow-hidden relative"
                     on:click={handleClick}
@@ -508,7 +453,7 @@
                             </div>
                         </div>
                     {/if}
-
+  
                     <div class="flex justify-between" style="width:50%">
                         <div class="m-1 text-white px-3 rounded-md bg-sky-800 py-1 h-fit">
                             {` ${currentindex + 1} / ${pages.length}`}
@@ -539,14 +484,23 @@
                 </div>
             {:else}
                 <div class="choose-pdf flex items-center justify-center pt-4 w-72">
-                    <p>Please select a template from the list</p>
+                    <input type="file" name="pdf" id="pdf" on:change={onUploadPDF} class="hidden" />
+                    <label
+                        class="whitespace-no-wrap w-fill bg-sky-800 hover:bg-sky-600 text-white font-bold py-4 px-3 md:px-4 rounded mr-3 cursor-pointer md:mr-4"
+                        for="pdf"
+                    >
+                        <i class="fa-solid fa-upload"></i>
+                        Choose PDF
+                    </label>
                 </div>
             {/if}
+  
+            
         </div>
     </div>
-</main>
-
-<style>
+  </main>
+  
+  <style>
     main {
         display: flex;
         flex-direction: row-reverse;
@@ -556,7 +510,7 @@
         min-height: 100vh;
         padding: 20px;
     }
-
+  
     .right-container {
         display: flex;
         flex-direction: column;
@@ -565,7 +519,7 @@
         border: 2px solid #dde4ee;
         width: 1200px;
     }
-
+  
     .edit-container {
         background-color: #dde4ee;
         height: 100%;
@@ -576,7 +530,7 @@
         justify-content: center;
         position: relative;
     }
-
+  
     .top-bar {
         position: sticky;
         top: 0;
@@ -586,7 +540,7 @@
         padding: 10px 0;
         background-color: #dde4ee;
     }
-
+  
     .pdf-container {
         flex: 1;
         display: flex;
@@ -595,7 +549,7 @@
         padding: 10px;
         overflow: auto;
     }
-
+  
     .choose-pdf {
         background-color: #fff;
         width: 500px;
@@ -604,4 +558,17 @@
         border: 2px dashed #33475b;
         border-radius: 20px;
     }
-</style>
+  
+    .table-container {
+        margin-top: 20px;
+    }
+  
+    table {
+        border: 1px solid #dde4ee;
+    }
+  
+    th, td {
+        border: 1px solid #dde4ee;
+        text-align: left;
+    }
+  </style>

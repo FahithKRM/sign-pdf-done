@@ -1,6 +1,6 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { Template } from '../entities/template.entity';
 import { UsedTemplate } from '../entities/used-template.entity';
+import { Template } from 'src/entities/template.entity';
 
 export const typeOrmConfig: TypeOrmModuleOptions = {
   type: 'sqlite',

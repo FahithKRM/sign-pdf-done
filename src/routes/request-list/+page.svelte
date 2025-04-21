@@ -14,7 +14,7 @@
   
     async function fetchTemplates() {
       try {
-        const response = await fetch('http://localhost:3000/templates');
+        const response = await fetch('http://localhost:3000/used-templates');
         templates = await response.json();
       } catch (e) {
         console.log('Fetch error:', e);
@@ -23,7 +23,7 @@
   
     async function deleteTemplate(id) {
       try {
-        const response = await fetch(`http://localhost:3000/templates/${id}`, {
+        const response = await fetch(`http://localhost:3000/used-templates/${id}`, {
           method: 'DELETE',
         });
         if (response.ok) {
@@ -32,7 +32,7 @@
             title: 'Success!',
             text: 'Template deleted successfully',
             icon: 'success',
-            confirmButtonText: 'OK'
+            confirmButtonText: 'OK',
           });
         }
       } catch (e) {
@@ -48,7 +48,7 @@
   
     async function saveEdit(id) {
       try {
-        const response = await fetch(`http://localhost:3000/templates/${id}`, {
+        const response = await fetch(`http://localhost:3000/used-templates/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: editName, description: editDescription }),
@@ -62,7 +62,7 @@
             title: 'Success!',
             text: 'Template updated successfully',
             icon: 'success',
-            confirmButtonText: 'OK'
+            confirmButtonText: 'OK',
           });
         }
       } catch (e) {
@@ -73,14 +73,15 @@
   
   <div class="template-list">
     <TopButton />
-    <h2>Templates</h2>
+    <h2>Used Templates</h2>
+
     <table>
       <thead>
         <tr>
           <th>Name</th>
           <th>Description</th>
           <th>Date</th>
-          <th>Action</th>
+          <th>Action (Request, Delete)</th>
         </tr>
       </thead>
       <tbody>
@@ -99,7 +100,7 @@
               <td>{template.description}</td>
               <td>{new Date(template.date).toLocaleDateString()}</td>
               <td>
-                <button on:click={() => startEdit(template)}>Edit</button>
+                <button on:click={() => startEdit(template)}>Request</button>
                 <button on:click={() => deleteTemplate(template.id)}>Delete</button>
               </td>
             {/if}
@@ -117,7 +118,8 @@
       width: 100%;
       border-collapse: collapse;
     }
-    th, td {
+    th,
+    td {
       border: 1px solid #ddd;
       padding: 8px;
       text-align: left;

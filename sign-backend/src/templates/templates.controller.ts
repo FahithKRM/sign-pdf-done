@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import multer from 'multer';
 import { extname } from 'path';
 
 @Controller('templates')
@@ -21,14 +21,18 @@ export class TemplatesController {
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
+      storage: multer.diskStorage({
         destination: './uploads',
-        filename: (req, file, cb) => {
+        filename: (
+          req: Express.Request,
+          file: Express.Multer.File,
+          cb: (error: Error | null, filename: string) => void,
+        ) => {
           const randomName = Array(32)
             .fill(null)
             .map(() => Math.round(Math.random() * 16).toString(16))
             .join('');
-          return cb(null, `${randomName}${extname(file.originalname)}`);
+          cb(null, `${randomName}${extname(file.originalname)}`);
         },
       }),
     }),

@@ -2,20 +2,19 @@
     import Swal from 'sweetalert2';
     import { v4 as uuidv4 } from 'uuid';
     import '@fortawesome/fontawesome-free/css/all.min.css';
+    import axios from 'axios';
     import PDFPage from '../../components/PDFPage.svelte';
     import Drawing from '../../components/Drawing.svelte';
     import Text from '../../components/Text.svelte';
     import { fetchFont } from '../../utils/getFonts.js';
     import { readAsPDF } from '../../utils/pdfReader.js';
-    import { save } from '../../utils/dlPDF.js';
     import '../../app.css';
     import ToolBar from '../../components/ToolBar.svelte';
     import AddTags from '../../components/AddTags.svelte';
-    import TemplateList from '../../components/TemplateList.svelte';
-
+	import TopButton from '../../components/TopButton.svelte';
+  
     let pdfFile;
     let pdfName = '';
-    let description = '';
     let pages = [];
     let pagesScale = [];
     let allObjects = [];
@@ -23,7 +22,6 @@
     let saving = false;
     let currentpage = null;
     let currentindex = 0;
-    let showList = false;
     $: show = selectedPageIndex < 0 ? 'hidden' : '';
     let currentFont = 'Times-Roman';
     let textOpened = false;
@@ -32,22 +30,23 @@
     let mouseY = 0;
     let clickedX = 0;
     let clickedY = 0;
-
+    let templates = [];
+  
     let tagCounters = {
         text: 0,
         signature: 0,
         number: 0,
         email: 0
     };
-
+  
     let pendingTag = null;
     let previewVisible = false;
     let previewX = 0;
     let previewY = 0;
-
+  
     let portal;
     $: portal && document.body.appendChild(portal);
-
+  
     async function onUploadPDF(e) {
         const files = e.target.files || (e.dataTransfer && e.dataTransfer.files);
         const file = files[0];
@@ -60,7 +59,7 @@
             console.log('Upload error:', e);
         }
     }
-
+  
     async function addPDF(file) {
         try {
             const pdf = await readAsPDF(file);
@@ -78,7 +77,7 @@
             throw e;
         }
     }
-
+  
     function prevPage() {
         if (currentindex > 0) {
             if (
@@ -105,7 +104,7 @@
             }
         }
     }
-
+  
     function nextPage() {
         if (currentindex < pages.length - 1) {
             if (
@@ -132,13 +131,13 @@
             }
         }
     }
-
+  
     function selectFontFamily(event) {
         const name = event.detail.name;
         fetchFont(name);
         currentFont = name;
     }
-
+  
     function IsPDFUploaded() {
         if (!pdfFile || pages.length === 0) {
             Swal.fire({
@@ -150,11 +149,11 @@
         }
         return true;
     }
-
+  
     function addTextField(text, type, x, y) {
         const posX = x !== undefined ? x : (mouseIsWorking ? clickedX : 100);
         const posY = y !== undefined ? y : (mouseIsWorking ? clickedY : 100);
-
+  
         const id = uuidv4();
         fetchFont(currentFont);
         const object = {
@@ -172,12 +171,12 @@
         mouseIsWorking = false;
         textOpened = false;
     }
-
+  
     function handleClick(event) {
         const rect = event.target.getBoundingClientRect();
         clickedX = event.clientX - rect.left;
         clickedY = event.clientY - rect.top;
-
+  
         if (pendingTag) {
             addTextField(pendingTag.text, pendingTag.type, clickedX, clickedY);
             pendingTag = null;
@@ -188,7 +187,7 @@
             mouseIsWorking = true;
         }
     }
-
+  
     function handleMouseMove(event) {
         if (pendingTag) {
             const rect = event.currentTarget.getBoundingClientRect();
@@ -197,11 +196,11 @@
             previewVisible = true;
         }
     }
-
+  
     function handleMouseLeave() {
         previewVisible = false;
     }
-
+  
     function updateObject(objectId, payload) {
         allObjects = allObjects.map((objects, pIndex) =>
             pIndex === selectedPageIndex
@@ -209,56 +208,159 @@
                 : objects
         );
     }
-
+  
     function deleteObject(objectId) {
         allObjects = allObjects.map((objects, pIndex) =>
             pIndex === selectedPageIndex ? objects.filter((object) => object.id !== objectId) : objects
         );
     }
-
+  
     function onMeasure(scale, i) {
         pagesScale[i] = scale;
     }
-
+  
     async function savePDF() {
         if (!pdfFile || saving || !pages.length) return;
         saving = true;
-        try {
-            await save(pdfFile, allObjects, pdfName, pagesScale);
-            const formData = new FormData();
-            formData.append('file', pdfFile);
-            formData.append('name', pdfName);
-            formData.append('description', description);
-
-            const response = await fetch('http://localhost:3000/templates', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) throw new Error('Failed to save template');
-            console.log('PDF saved successfully');
-            Swal.fire({
-                title: 'Success!',
-                text: 'PDF template saved successfully',
-                icon: 'success',
-                confirmButtonText: 'OK'
-            });
-        } catch (e) {
-            console.log('Save error:', e);
-            Swal.fire({
-                title: 'Error!',
-                text: 'Failed to save PDF template',
-                icon: 'error',
-                confirmButtonText: 'OK'
-            });
-        } finally {
+  
+        const { value: formValues } = await Swal.fire({
+            title: 'Save Template',
+            html:
+                '<input id="swal-input1" class="swal2-input" placeholder="PDF Name">' +
+                '<input id="swal-input2" class="swal2-input" placeholder="Description">',
+            focusConfirm: false,
+            preConfirm: () => {
+                return [
+                    document.getElementById('swal-input1').value,
+                    document.getElementById('swal-input2').value
+                ];
+            }
+        });
+  
+        if (formValues) {
+            const [name, description] = formValues;
+            if (!name) {
+                Swal.fire({
+                    title: 'Error',
+                    text: 'PDF name is required',
+                    icon: 'error'
+                });
+                saving = false;
+                return;
+            }
+  
+            try {
+                const formData = new FormData();
+                formData.append('pdf', pdfFile);
+                formData.append('name', name);
+                formData.append('description', description);
+  
+                const response = await axios.post('http://localhost:3000/templates', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+  
+                templates = [...templates, response.data];
+                Swal.fire({
+                    title: 'Success!',
+                    text: 'Template saved successfully',
+                    icon: 'success'
+                });
+            } catch (e) {
+                console.log('Save error:', e);
+                Swal.fire({
+                    title: 'Error!',
+                    text: 'Failed to save template',
+                    icon: 'error'
+                });
+            } finally {
+                saving = false;
+            }
+        } else {
             saving = false;
         }
     }
-
+  
+    async function fetchTemplates() {
+        try {
+            const response = await axios.get('http://localhost:3000/templates');
+            templates = response.data;
+        } catch (e) {
+            console.log('Fetch templates error:', e);
+        }
+    }
+  
+    async function editTemplate(id) {
+        const template = templates.find((t) => t.id === id);
+        const { value: formValues } = await Swal.fire({
+            title: 'Edit Template',
+            html:
+                `<input id="swal-input1" class="swal2-input" value="${template.name}" placeholder="PDF Name">` +
+                `<input id="swal-input2" class="swal2-input" value="${template.description}" placeholder="Description">`,
+            focusConfirm: false,
+            preConfirm: () => {
+                return [
+                    document.getElementById('swal-input1').value,
+                    document.getElementById('swal-input2').value
+                ];
+            }
+        });
+  
+        if (formValues) {
+            const [name, description] = formValues;
+            try {
+                const response = await axios.patch(`http://localhost:3000/templates/${id}`, {
+                    name,
+                    description
+                });
+                templates = templates.map((t) => (t.id === id ? response.data : t));
+                Swal.fire({
+                    title: 'Success!',
+                    text: 'Template updated successfully',
+                    icon: 'success'
+                });
+            } catch (e) {
+                console.log('Update error:', e);
+                Swal.fire({
+                    title: 'Error!',
+                    text: 'Failed to update template',
+                    icon: 'error'
+                });
+            }
+        }
+    }
+  
+    async function deleteTemplate(id) {
+        const result = await Swal.fire({
+            title: 'Are you sure?',
+            text: 'You won’t be able to revert this!',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, delete it!'
+        });
+  
+        if (result.isConfirmed) {
+            try {
+                await axios.delete(`http://localhost:3000/templates/${id}`);
+                templates = templates.filter((t) => t.id !== id);
+                Swal.fire({
+                    title: 'Deleted!',
+                    text: 'Template has been deleted.',
+                    icon: 'success'
+                });
+            } catch (e) {
+                console.log('Delete error:', e);
+                Swal.fire({
+                    title: 'Error!',
+                    text: 'Failed to delete template',
+                    icon: 'error'
+                });
+            }
+        }
+    }
+  
     function addTag(type) {
         if (!IsPDFUploaded()) return;
-
+  
         tagCounters[type]++;
         let displayText;
         switch (type) {
@@ -280,15 +382,18 @@
             type
         };
     }
-</script>
-
-<svelte:window
+  
+    // Fetch templates on component mount
+    fetchTemplates();
+  </script>
+  
+  <svelte:window
     on:dragenter|preventDefault
     on:dragover|preventDefault
     on:drop|preventDefault={onUploadPDF}
-/>
-
-<main>
+  />
+  
+  <main>
     <AddTags {addTag}/>
     <div class="right-container">
         <ToolBar />
@@ -305,18 +410,7 @@
                         bind:value={pdfName}
                     />
                 </div>
-                <input
-                    placeholder="Description"
-                    type="text"
-                    class="tools flex-grow bg-sky-800 text-white p-1 rounded mr-3"
-                    bind:value={description}
-                />
-                <button
-                    on:click={() => (showList = !showList)}
-                    class="tools flex items-center w-24 bg-sky-800 hover:bg-sky-600 text-white font-bold py-1 px-3 md:px-4 mr-3 md:mr-4 rounded"
-                >
-                    <i class="fa-solid fa-list me-1"></i> Templates
-                </button>
+  
                 <button
                     on:click={savePDF}
                     class="tools flex items-center w-24 bg-sky-800 hover:bg-sky-600 text-white font-bold py-1 px-3 md:px-4 mr-3 md:mr-4 rounded {show}"
@@ -326,10 +420,8 @@
                     <i class="fa-solid fa-download me-1"></i>{saving ? 'Saving' : 'Save'}
                 </button>
             </div>
-
-            {#if showList}
-                <TemplateList />
-            {:else if pages.length}
+  
+            {#if pages.length}
                 <div
                     class="flex justify-center items-center px-5 w-full md:hidden bg-sky-800 rounded-sm py-1"
                 >
@@ -341,7 +433,7 @@
                         bind:value={pdfName}
                     />
                 </div>
-
+  
                 <div
                     class="pdf-container p-5 w-full flex flex-col items-center overflow-hidden relative"
                     on:click={handleClick}
@@ -389,7 +481,7 @@
                             </div>
                         </div>
                     {/if}
-
+  
                     {#if previewVisible && pendingTag}
                         <div
                             class="tag-preview absolute"
@@ -407,7 +499,7 @@
                             />
                         </div>
                     {/if}
-
+  
                     <div class="flex justify-between" style="width:50%">
                         <div class="m-1 text-white px-3 rounded-md bg-sky-800 py-1 h-fit">
                             {` ${currentindex + 1} / ${pages.length}`}
@@ -448,11 +540,50 @@
                     </label>
                 </div>
             {/if}
+  
+            {#if templates.length}
+                <div class="table-container p-5 w-full">
+                    <h2>Saved Templates</h2>
+                    <table class="w-full border-collapse">
+                        <thead>
+                            <tr class="bg-sky-800 text-white">
+                                <th class="p-2">Name</th>
+                                <th class="p-2">Description</th>
+                                <th class="p-2">Date</th>
+                                <th class="p-2">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each templates as template (template.id)}
+                                <tr class="border-b">
+                                    <td class="p-2">{template.name}</td>
+                                    <td class="p-2">{template.description}</td>
+                                    <td class="p-2">{new Date(template.date).toLocaleString()}</td>
+                                    <td class="p-2">
+                                        <button
+                                            on:click={() => editTemplate(template.id)}
+                                            class="bg-blue-500 text-white px-2 py-1 rounded mr-2"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            on:click={() => deleteTemplate(template.id)}
+                                            class="bg-red-500 text-white px-2 py-1 rounded"
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+            {/if}
         </div>
     </div>
-</main>
-
-<style>
+  </main>
+  
+  <style>
     main {
         display: flex;
         flex-direction: row-reverse;
@@ -462,7 +593,7 @@
         min-height: 100vh;
         padding: 20px;
     }
-
+  
     .right-container {
         display: flex;
         flex-direction: column;
@@ -471,7 +602,7 @@
         border: 2px solid #dde4ee;
         width: 1200px;
     }
-
+  
     .edit-container {
         background-color: #dde4ee;
         height: 100%;
@@ -482,7 +613,7 @@
         justify-content: center;
         position: relative;
     }
-
+  
     .top-bar {
         position: sticky;
         top: 0;
@@ -492,7 +623,7 @@
         padding: 10px 0;
         background-color: #dde4ee;
     }
-
+  
     .pdf-container {
         flex: 1;
         display: flex;
@@ -501,7 +632,7 @@
         padding: 10px;
         overflow: auto;
     }
-
+  
     .choose-pdf {
         background-color: #fff;
         width: 500px;
@@ -510,9 +641,22 @@
         border: 2px dashed #33475b;
         border-radius: 20px;
     }
-
+  
     .tag-preview {
         pointer-events: none;
         z-index: 20;
     }
-</style>
+  
+    .table-container {
+        margin-top: 20px;
+    }
+  
+    table {
+        border: 1px solid #dde4ee;
+    }
+  
+    th, td {
+        border: 1px solid #dde4ee;
+        text-align: left;
+    }
+  </style>

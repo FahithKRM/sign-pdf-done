@@ -1,72 +1,57 @@
 import { Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-
-export interface Template {
-  id: string;
-  name: string;
-  description: string;
-  date: string;
-  pdfBase64: string;
-}
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Template } from '../entities/template.entity';
+import { join } from 'path';
+import * as fs from 'fs/promises';
 
 @Injectable()
 export class TemplatesService {
-  private templates: Template[] = [];
+  constructor(
+    @InjectRepository(Template)
+    private templateRepository: Repository<Template>,
+  ) {}
 
-  saveTemplate(
+  async create(
     file: Express.Multer.File,
     name: string,
     description: string,
-  ): Template {
-    const id = uuidv4();
-    const date = new Date().toISOString();
-    const pdfBase64 = file.buffer.toString('base64');
-
-    const template: Template = { id, name, description, date, pdfBase64 };
-    this.templates.push(template);
-    return template;
-  }
-
-  getTemplates(): Template[] {
-    return this.templates.map(({ id, name, description, date }) => ({
-      id,
+  ): Promise<Template> {
+    const filePath = join('uploads', file.filename);
+    const template = this.templateRepository.create({
       name,
       description,
-      date,
-      pdfBase64: '', // Exclude PDF content for listing
-    }));
+      filePath,
+    });
+    return this.templateRepository.save(template);
   }
 
-  getTemplateById(id: string): Template {
-    const template = this.templates.find((t) => t.id === id);
+  async findAll(): Promise<Template[]> {
+    return this.templateRepository.find();
+  }
+
+  async findOne(id: string): Promise<Template> {
+    const template = await this.templateRepository.findOneBy({ id });
     if (!template) {
-      throw new Error('Template not found');
+      throw new Error(`Template with ID ${id} not found.`);
     }
     return template;
   }
 
-  updateTemplate(id: string, name: string, description: string): Template {
-    const template = this.templates.find((t) => t.id === id);
-    if (!template) {
-      throw new Error('Template not found');
-    }
+  async update(
+    id: string,
+    name: string,
+    description: string,
+  ): Promise<Template> {
+    const template = await this.findOne(id);
     template.name = name;
     template.description = description;
-    template.date = new Date().toISOString();
-    return template;
+    return this.templateRepository.save(template);
   }
 
-  deleteTemplate(id: string): void {
-    const index = this.templates.findIndex((t) => t.id === id);
-    if (index === -1) {
-      throw new Error('Template not found');
-    }
-    this.templates.splice(index, 1);
+  async remove(id: string): Promise<void> {
+    const template = await this.findOne(id);
+    await fs.unlink(join(__dirname, '..', '..', template.filePath));
+    await this.templateRepository.delete(id);
   }
 }
-
-// The TemplatesService class manages the templates in memory.
-// It provides methods to save, retrieve, update, and delete templates.
-// The templates are stored in an array, and each template has an ID, name, description, date, and PDF content in base64 format.
-// The saveTemplate method takes a file, name, and description as input,
-// generates a unique ID and date, converts the file to base64, and stores the template

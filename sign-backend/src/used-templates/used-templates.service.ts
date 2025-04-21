@@ -17,7 +17,14 @@ export class UsedTemplatesService {
     file: Express.Multer.File,
     name: string,
     description: string,
-    replacements: { defaultText: string; newText: string; x: number; y: number; size: number; page: number }[],
+    replacements: {
+      defaultText: string;
+      newText: string;
+      x: number;
+      y: number;
+      size: number;
+      page: number;
+    }[],
   ): Promise<UsedTemplate> {
     const pdfBuffer = await fs.readFile(file.path);
     const pdfDoc = await PDFDocument.load(pdfBuffer);
@@ -65,7 +72,11 @@ export class UsedTemplatesService {
   }
 
   async findOne(id: string): Promise<UsedTemplate> {
-    return this.usedTemplateRepository.findOneBy({ id });
+    const usedTemplate = await this.usedTemplateRepository.findOneBy({ id });
+    if (!usedTemplate) {
+      throw new Error(`UsedTemplate with ID ${id} not found.`);
+    }
+    return usedTemplate;
   }
 
   async remove(id: string): Promise<void> {

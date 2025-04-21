@@ -1,7 +1,6 @@
 <script>
 	import '../app.css';
 	import { goto } from '$app/navigation';
-	import TopButton from '../components/TopButton.svelte';
 	
 	// Track which button is active
 	let activeButton = "template"; // Start with template list active
@@ -26,10 +25,7 @@
   </script>
   
   <main>
-	<div class="container">
-<TopButton/>
-
-	  <!-- <div class="button-tab">
+    	  <div class="button-tab">
 		<div class="left-side">
 		  <button class="request-list {activeButton === 'request' ? 'active' : ''}" on:click={navigateToRequest}>
 			Request List
@@ -44,8 +40,7 @@
 			Create Template
 		  </button>
 		</div>
-	  </div> -->
-
+	  </div>
 	  <!-- <div class="edit-container">
 		<div class="choose-pdf flex items-center justify-center pt-4 w-72">
 		  <button
@@ -67,28 +62,9 @@
 		  </button>
 		</div>
 	  </div> -->
-	</div>
   </main>
 
   <style>
-	main {
-	  display: flex;
-	  margin: 40px;
-	  background-color: #fff;
-	  border-radius: 10px;
-	  min-height: 100vh;
-	  padding: 20px;
-	}
-
-
-	.container {
-	  display: flex;
-	  border-radius: 6px;
-	  border: 2px solid #dde4ee;
-	  min-width: 90vw;
-	  /* width: 1800px; */
-	  background-color: #dde4ee;
-	}
 
 	.button-tab{
 		background-color: #fff;
@@ -99,7 +75,7 @@
 		justify-content: space-between;
 		align-items: center;
 		height: 50px;
-		width: 100vw;
+		width: 1400px;
 	}
   
 	.left-side, .right-side {
