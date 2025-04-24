@@ -108,6 +108,16 @@
 					if (tag.type === 'email') tagCounters.email = Math.max(tagCounters.email, parseInt(tag.text.replace('Email', '')) || 0);
 				});
 			}
+
+			// Ensure the UI updates after loading
+			if (pages.length > 0) {
+				selectedPageIndex = 0;
+				currentindex = 0;
+				currentpage = pages[0];
+				// Force reactivity by reassigning
+				pages = [...pages];
+				allObjects = [...allObjects];
+			}
 		} catch (e) {
 			console.error('Load template error:', e);
 			Swal.fire({
@@ -248,6 +258,9 @@
 		allObjects[selectedPageIndex] = [...allObjects[selectedPageIndex], object];
 		mouseIsWorking = false;
 		textOpened = false;
+		// Reset pending tag and preview
+		pendingTag = null;
+		previewVisible = false;
 	}
 
 	function handleClick(event) {
@@ -257,8 +270,6 @@
 
 		if (pendingTag) {
 			addTextField(pendingTag.text, pendingTag.type, clickedX, clickedY);
-			pendingTag = null;
-			previewVisible = false;
 		} else {
 			mouseX = event.clientX;
 			mouseY = event.clientY;
@@ -272,6 +283,8 @@
 			previewX = event.clientX - rect.left;
 			previewY = event.clientY - rect.top;
 			previewVisible = true;
+		} else {
+			previewVisible = false;
 		}
 	}
 
@@ -445,7 +458,7 @@
 					on:mousemove={handleMouseMove}
 					on:mouseleave={handleMouseLeave}
 				>
-					{#if pages[selectedPageIndex]}
+					{#if pages.length > 0 && pages[selectedPageIndex]}
 						<div class="relative shadow-lg border-sky-800 border-2">
 							<PDFPage
 								on:measure={(e) => onMeasure(e.detail.scale, selectedPageIndex)}
@@ -455,7 +468,7 @@
 								class="absolute top-0 left-0 transform origin-top-left"
 								style="transform: scale({pagesScale[selectedPageIndex]}); touch-action: none;"
 							>
-								{#each allObjects[selectedPageIndex] as object (object.id)}
+								{#each allObjects[selectedPageIndex] || [] as object (object.id)}
 									{#if object.type === 'drawing'}
 										<Drawing
 											on:update={(e) => updateObject(object.id, e.detail)}
@@ -486,6 +499,8 @@
 								{/each}
 							</div>
 						</div>
+					{:else}
+						<p>Loading PDF...</p>
 					{/if}
 
 					{#if previewVisible && pendingTag}
@@ -506,33 +521,35 @@
 						</div>
 					{/if}
 
-					<div class="flex justify-between" style="width:50%">
-						<div class="m-1 text-white px-3 rounded-md bg-sky-800 py-1 h-fit">
-							{` ${currentindex + 1} / ${pages.length}`}
-						</div>
-						<div class="flex gap-1">
-							<div>
-								{#if currentindex > 0}
-									<button
-										on:click={prevPage}
-										class="text-white m-2 bg-sky-600 hover:bg-sky-800 px-3 py-1 rounded"
-									>
-										<i class="fa-solid fa-circle-chevron-left"></i>
-									</button>
-								{/if}
+					{#if pages.length > 0}
+						<div class="flex justify-between" style="width:50%">
+							<div class="m-1 text-white px-3 rounded-md bg-sky-800 py-1 h-fit">
+								{` ${currentindex + 1} / ${pages.length}`}
 							</div>
-							<div>
-								{#if currentindex < pages.length - 1}
-									<button
-										on:click={nextPage}
-										class="text-white m-2 bg-sky-600 hover:bg-sky-800 px-3 py-1 rounded"
-									>
-										<i class="fa-solid fa-circle-chevron-right"></i>
-									</button>
-								{/if}
+							<div class="flex gap-1">
+								<div>
+									{#if currentindex > 0}
+										<button
+											on:click={prevPage}
+											class="text-white m-2 bg-sky-600 hover:bg-sky-800 px-3 py-1 rounded"
+										>
+											<i class="fa-solid fa-circle-chevron-left"></i>
+										</button>
+									{/if}
+								</div>
+								<div>
+									{#if currentindex < pages.length - 1}
+										<button
+											on:click={nextPage}
+											class="text-white m-2 bg-sky-600 hover:bg-sky-800 px-3 py-1 rounded"
+										>
+											<i class="fa-solid fa-circle-chevron-right"></i>
+										</button>
+									{/if}
+								</div>
 							</div>
 						</div>
-					</div>
+					{/if}
 				</div>
 			{:else}
 				<div class="choose-pdf flex items-center justify-center pt-4 w-72">
