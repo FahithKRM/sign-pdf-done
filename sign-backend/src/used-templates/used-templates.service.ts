@@ -1,87 +1,49 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UsedTemplate } from '../entities/used-template.entity';
-import { join } from 'path';
-import * as fs from 'fs/promises';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { UsedTemplate } from './used-template.entity';
+import { unlink } from 'fs/promises';
 
 @Injectable()
 export class UsedTemplatesService {
   constructor(
     @InjectRepository(UsedTemplate)
-    private usedTemplateRepository: Repository<UsedTemplate>,
+    private usedTemplatesRepository: Repository<UsedTemplate>,
   ) {}
 
-  async create(
-    file: Express.Multer.File,
-    name: string,
-    description: string,
-    replacements: {
-      defaultText: string;
-      newText: string;
-      x: number;
-      y: number;
-      size: number;
-      page: number;
-    }[],
-  ): Promise<UsedTemplate> {
-    const pdfBuffer = await fs.readFile(file.path);
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-
-    for (const { defaultText, newText, x, y, size, page } of replacements) {
-      const pdfPage = pdfDoc.getPage(page - 1);
-      const textWidth = font.widthOfTextAtSize(defaultText, size);
-      const textHeight = size;
-
-      // Cover old text with a white rectangle
-      pdfPage.drawRectangle({
-        x,
-        y: pdfPage.getHeight() - y - textHeight,
-        width: textWidth,
-        height: textHeight,
-        color: rgb(1, 1, 1),
-      });
-
-      // Draw new text
-      pdfPage.drawText(newText, {
-        x,
-        y: pdfPage.getHeight() - y - textHeight,
-        size,
-        font,
-        color: rgb(0, 0, 0),
-      });
-    }
-
-    const pdfBytes = await pdfDoc.save();
-    const newFileName = `modified_${file.filename}`;
-    const newFilePath = join('uploads', newFileName);
-    await fs.writeFile(newFilePath, pdfBytes);
-
-    const usedTemplate = this.usedTemplateRepository.create({
-      name,
-      description,
-      filePath: newFilePath,
+  async create(dto: { name: string; description: string; filePath: string }) {
+    const template = this.usedTemplatesRepository.create({
+      name: dto.name,
+      description: dto.description,
+      filePath: dto.filePath,
     });
-    return this.usedTemplateRepository.save(usedTemplate);
+    return this.usedTemplatesRepository.save(template);
   }
 
-  async findAll(): Promise<UsedTemplate[]> {
-    return this.usedTemplateRepository.find();
+  async findAll() {
+    return this.usedTemplatesRepository.find();
   }
 
-  async findOne(id: string): Promise<UsedTemplate> {
-    const usedTemplate = await this.usedTemplateRepository.findOneBy({ id });
-    if (!usedTemplate) {
-      throw new Error(`UsedTemplate with ID ${id} not found.`);
+  async findOne(id: string) {
+    const template = await this.usedTemplatesRepository.findOne({
+      where: { id },
+    });
+    if (!template) {
+      throw new NotFoundException(`Used template with ID ${id} not found`);
     }
-    return usedTemplate;
+    return template;
   }
 
-  async remove(id: string): Promise<void> {
-    const usedTemplate = await this.findOne(id);
-    await fs.unlink(join(__dirname, '..', '..', usedTemplate.filePath));
-    await this.usedTemplateRepository.delete(id);
+  async update(id: string, updateDto: { name?: string; description?: string }) {
+    const template = await this.findOne(id);
+    if (updateDto.name) template.name = updateDto.name;
+    if (updateDto.description) template.description = updateDto.description;
+    return this.usedTemplatesRepository.save(template);
+  }
+
+  async remove(id: string) {
+    const template = await this.findOne(id);
+    await unlink(template.filePath);
+    return this.usedTemplatesRepository.remove(template);
   }
 }

@@ -1,57 +1,66 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Template } from '../entities/template.entity';
-import { join } from 'path';
-import * as fs from 'fs/promises';
+import { Template } from './template.entity';
+import { unlink } from 'fs/promises';
 
 @Injectable()
 export class TemplatesService {
   constructor(
     @InjectRepository(Template)
-    private templateRepository: Repository<Template>,
+    private templatesRepository: Repository<Template>,
   ) {}
 
-  async create(
-    file: Express.Multer.File,
-    name: string,
-    description: string,
-  ): Promise<Template> {
-    const filePath = join('uploads', file.filename);
-    const template = this.templateRepository.create({
-      name,
-      description,
-      filePath,
+  async create(dto: {
+    name: string;
+    description: string;
+    filePath: string;
+    tags: any[];
+  }) {
+    const template = this.templatesRepository.create({
+      name: dto.name,
+      description: dto.description,
+      filePath: dto.filePath,
+      tags: dto.tags,
     });
-    return this.templateRepository.save(template);
+    return this.templatesRepository.save(template);
   }
 
-  async findAll(): Promise<Template[]> {
-    return this.templateRepository.find();
+  async findAll() {
+    return this.templatesRepository.find();
   }
 
-  async findOne(id: string): Promise<Template> {
-    const template = await this.templateRepository.findOneBy({ id });
+  async findOne(id: string) {
+    const template = await this.templatesRepository.findOne({ where: { id } });
     if (!template) {
-      throw new Error(`Template with ID ${id} not found.`);
+      throw new NotFoundException(`Template with ID ${id} not found`);
     }
     return template;
   }
 
   async update(
     id: string,
-    name: string,
-    description: string,
-  ): Promise<Template> {
+    updateDto: {
+      name?: string;
+      description?: string;
+      filePath?: string;
+      tags?: any[];
+    },
+  ) {
     const template = await this.findOne(id);
-    template.name = name;
-    template.description = description;
-    return this.templateRepository.save(template);
+    if (updateDto.name) template.name = updateDto.name;
+    if (updateDto.description) template.description = updateDto.description;
+    if (updateDto.filePath) {
+      await unlink(template.filePath).catch(() => {}); // Delete old file if exists
+      template.filePath = updateDto.filePath;
+    }
+    if (updateDto.tags) template.tags = updateDto.tags;
+    return this.templatesRepository.save(template);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string) {
     const template = await this.findOne(id);
-    await fs.unlink(join(__dirname, '..', '..', template.filePath));
-    await this.templateRepository.delete(id);
+    await unlink(template.filePath).catch(() => {}); // Delete file if exists
+    return this.templatesRepository.remove(template);
   }
 }

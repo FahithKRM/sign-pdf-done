@@ -2,16 +2,19 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Param,
   Delete,
+  Patch,
   UseInterceptors,
   UploadedFile,
+  Res,
+  Body,
 } from '@nestjs/common';
 import { UsedTemplatesService } from './used-templates.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { Response } from 'express';
 
 @Controller('used-templates')
 export class UsedTemplatesController {
@@ -19,19 +22,14 @@ export class UsedTemplatesController {
 
   @Post()
   @UseInterceptors(
-    FileInterceptor('file', {
+    FileInterceptor('pdf', {
       storage: diskStorage({
-        destination: './uploads',
-        filename: (
-          req: Express.Request,
-          file: Express.Multer.File,
-          cb: (error: Error | null, filename: string) => void,
-        ) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
+        destination: './uploads/used_templates',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
         },
       }),
     }),
@@ -40,41 +38,38 @@ export class UsedTemplatesController {
     @UploadedFile() file: Express.Multer.File,
     @Body('name') name: string,
     @Body('description') description: string,
-    @Body('replacements') replacements: string,
   ) {
-    const parsedReplacements = JSON.parse(replacements) as {
-      defaultText: string;
-      newText: string;
-      x: number;
-      y: number;
-      size: number;
-      page: number;
-    }[];
-
-    if (!Array.isArray(parsedReplacements)) {
-      throw new Error('Invalid replacements format');
-    }
-
-    return this.usedTemplatesService.create(
-      file,
+    return this.usedTemplatesService.create({
       name,
       description,
-      parsedReplacements,
-    );
+      filePath: file.path,
+    });
   }
 
   @Get()
-  findAll() {
+  async findAll() {
     return this.usedTemplatesService.findAll();
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.usedTemplatesService.findOne(id);
+  @Get('file/:id')
+  async getFile(@Param('id') id: string, @Res() res: Response) {
+    const template = await this.usedTemplatesService.findOne(id);
+    if (!template) {
+      throw new Error('Used template not found');
+    }
+    return res.sendFile(template.filePath, { root: '.' });
+  }
+
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: { name?: string; description?: string },
+  ) {
+    return this.usedTemplatesService.update(id, updateDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string) {
     return this.usedTemplatesService.remove(id);
   }
 }

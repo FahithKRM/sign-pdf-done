@@ -5,14 +5,16 @@ import {
   Body,
   Param,
   Delete,
+  Patch,
   UseInterceptors,
   UploadedFile,
-  Put,
+  Res,
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import multer from 'multer';
+import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { Response } from 'express';
 
 @Controller('templates')
 export class TemplatesController {
@@ -20,19 +22,14 @@ export class TemplatesController {
 
   @Post()
   @UseInterceptors(
-    FileInterceptor('file', {
-      storage: multer.diskStorage({
-        destination: './uploads',
-        filename: (
-          req: Express.Request,
-          file: Express.Multer.File,
-          cb: (error: Error | null, filename: string) => void,
-        ) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
+    FileInterceptor('pdf', {
+      storage: diskStorage({
+        destination: './Uploads/templates',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
         },
       }),
     }),
@@ -41,31 +38,69 @@ export class TemplatesController {
     @UploadedFile() file: Express.Multer.File,
     @Body('name') name: string,
     @Body('description') description: string,
+    @Body('tags') tags: string,
   ) {
-    return this.templatesService.create(file, name, description);
+    const parsedTags = tags ? JSON.parse(tags) : [];
+    return this.templatesService.create({
+      name,
+      description,
+      filePath: file.path,
+      tags: parsedTags,
+    });
   }
 
   @Get()
-  findAll() {
+  async findAll() {
     return this.templatesService.findAll();
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string) {
     return this.templatesService.findOne(id);
   }
 
-  @Put(':id')
-  update(
+  @Get('file/:id')
+  async getFile(@Param('id') id: string, @Res() res: Response) {
+    const template = await this.templatesService.findOne(id);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+    return res.sendFile(template.filePath, { root: '.' });
+  }
+
+  @Patch(':id')
+  @UseInterceptors(
+    FileInterceptor('pdf', {
+      storage: diskStorage({
+        destination: './Uploads/templates',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+        },
+      }),
+    }),
+  )
+  async update(
     @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
     @Body('name') name: string,
     @Body('description') description: string,
+    @Body('tags') tags: string,
   ) {
-    return this.templatesService.update(id, name, description);
+    const parsedTags = tags ? JSON.parse(tags) : [];
+    const updateDto = {
+      name,
+      description,
+      filePath: file ? file.path : undefined,
+      tags: parsedTags,
+    };
+    return this.templatesService.update(id, updateDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string) {
     return this.templatesService.remove(id);
   }
 }
