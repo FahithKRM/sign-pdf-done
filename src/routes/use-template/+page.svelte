@@ -35,10 +35,75 @@
 	let errorMessage = '';
 	let clickedX = 0;
 	let clickedY = 0;
+	let userDetails = {
+		employeeName: '',
+		employeeJobTitle: ''
+	};
+
+	async function fetchUserDetails() {
+		try {
+			const response = await axios.get('http://localhost:3000/user-details');
+			userDetails = response.data;
+			console.log('Fetched user details:', userDetails);
+			await autoReplaceTags();
+		} catch (e) {
+			console.error('Fetch user details error:', e);
+			Swal.fire({
+				title: 'Error!',
+				text: 'Failed to fetch user details. Some tags may not be replaced.',
+				icon: 'error'
+			});
+		}
+	}
+
+	async function autoReplaceTags() {
+		for (const tag of detectedTags) {
+			if (['employeeName', 'employeeJobTitle'].includes(tag.type)) {
+				let newText = '';
+				if (tag.type === 'employeeName') newText = userDetails.employeeName;
+				if (tag.type === 'employeeJobTitle') newText = userDetails.employeeJobTitle;
+
+				if (newText) {
+					saving = true;
+					try {
+						const updatedPdfBytes = await replaceTextInPDF(
+							pdfFile,
+							tag.page - 1,
+							tag.defaultText,
+							newText,
+							tag.x,
+							tag.y,
+							tag.size,
+							tag.scale
+						);
+
+						pdfFile = new File([updatedPdfBytes], pdfName, { type: 'application/pdf' });
+						await addPDF(pdfFile);
+
+						detectedTags = detectedTags.map(t =>
+							t.id === tag.id
+								? { ...t, displayText: newText, newText, replaced: true }
+								: t
+						);
+
+						modifiedPdf = true;
+					} catch (e) {
+						console.error(`Auto-replacement error for ${tag.type}:`, e);
+						Swal.fire({
+							title: 'Error!',
+							text: `Failed to replace ${tag.type}: ${e.message}`,
+							icon: 'error'
+						});
+					} finally {
+						saving = false;
+					}
+				}
+			}
+		}
+	}
 
 	async function loadTemplate(templateId) {
 		try {
-			// Fetch template metadata
 			const response = await axios.get(`http://localhost:3000/templates/${templateId}`);
 			const template = response.data;
 			console.log('Template metadata:', template);
@@ -58,14 +123,13 @@
 						newText: '',
 						x: tag.x,
 						y: tag.y,
-						size: tag.size,
+						size: tag.size || 16,
 						scale: pagesScale[tag.page - 1] || 1,
-						replaced: false // Add flag to track if tag has been replaced
+						replaced: false
 					}))
 				: [];
 			console.log('Detected tags:', detectedTags);
 
-			// Fetch the PDF file
 			const fileResponse = await axios.get(`http://localhost:3000/templates/file/${templateId}`, { responseType: 'blob' });
 			if (!fileResponse.data || fileResponse.data.size === 0) {
 				throw new Error('PDF file is empty or not found');
@@ -105,7 +169,6 @@
 			currentpage = pages[0];
 			currentindex = 0;
 
-			// Update detectedTags with new scales
 			detectedTags = detectedTags.map(tag => ({
 				...tag,
 				scale: pagesScale[tag.page - 1] || 1
@@ -192,10 +255,9 @@
 			scale
 		};
 		allObjects[selectedPageIndex] = [...allObjects[selectedPageIndex], object];
-		// Update detectedTags to mark signature as added
 		detectedTags = detectedTags.map(tag =>
 			tag.type === 'signature' && tag.page - 1 === selectedPageIndex && tag.x === clickedX && tag.y === clickedY
-				? { ...tag, newText: 'Signature Added' }
+				? { ...tag, newText: 'Signature Added', displayText: 'Signature Added', replaced: true }
 				: tag
 		);
 		addingDrawing = false;
@@ -234,7 +296,6 @@
 		if (!pdfFile || saving || !pages.length) return;
 		saving = true;
 
-		// Embed signatures in the PDF
 		let finalPdfFile = pdfFile;
 		if (allObjects.flat().some(obj => obj.type === 'drawing')) {
 			const pdfBuffer = await readAsArrayBuffer(pdfFile);
@@ -269,6 +330,9 @@
 					document.getElementById('swal-input1').value,
 					document.getElementById('swal-input2').value
 				];
+			},
+			didOpen: () => {
+				document.getElementById('swal-input1').value = pdfName;
 			}
 		});
 
@@ -302,13 +366,7 @@
 					icon: 'success'
 				});
 
-				// Clear memory-intensive variables
-				pages = [];
-				allObjects = [];
-				pagesScale = [];
-				pdfFile = null;
-				detectedTags = [];
-				selectedPageIndex = -1;
+				await goto('/request-list');
 			} catch (e) {
 				console.error('Save error:', e);
 				Swal.fire({
@@ -342,26 +400,23 @@
 			const page = pages[pageIndex];
 			const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
 
-			// Calculate the dimensions of the old text to cover it
 			const oldTextWidth = font.widthOfTextAtSize(oldText, size);
 			const textHeight = size;
 
-			// Draw a white rectangle to cover the old text (acting as an eraser)
 			page.drawRectangle({
-				x: x / scale, // Adjust for scale
-				y: page.getHeight() - (y / scale) - textHeight, // Adjust for scale and page height
+				x: x / scale,
+				y: page.getHeight() - (y / scale) - textHeight,
 				width: oldTextWidth,
 				height: textHeight,
-				color: rgb(1, 1, 1), // White to cover the old text
+				color: rgb(1, 1, 1)
 			});
 
-			// Draw the new text at the same position
 			page.drawText(newText, {
-				x: x / scale, // Adjust for scale
-				y: page.getHeight() - (y / scale) - textHeight, // Adjust for scale and page height
-				size: size,
-				font: font,
-				color: rgb(0, 0, 0), // Black for the new text
+				x: x / scale,
+				y: page.getHeight() - (y / scale) - textHeight,
+				size,
+				font,
+				color: rgb(0, 0, 0)
 			});
 
 			const pdfBytes = await pdfDoc.save();
@@ -375,9 +430,14 @@
 	async function handleTagReplace(event) {
 		const { id, type, page, defaultText, x, y, size, scale, newText } = event.detail;
 
-		// Check if the tag has already been replaced
-		const tag = detectedTags.find(tag => tag.id === id);
-		
+		if (type !== 'text') {
+			Swal.fire({
+				title: 'Invalid Action',
+				text: 'Only text tags can be manually replaced.',
+				icon: 'warning'
+			});
+			return;
+		}
 
 		if (page - 1 !== currentindex) {
 			currentindex = page - 1;
@@ -388,35 +448,8 @@
 		clickedX = x;
 		clickedY = y;
 
-		if (type === 'signature') {
-			signaturePending = true;
-			onAddSignature();
-			return;
-		}
-
-		if (type === 'email' && newText && !/\S+@\S+\.\S+/.test(newText)) {
-			Swal.fire({
-				title: 'Invalid Email',
-				text: 'Please enter a valid email address',
-				icon: 'warning',
-				confirmButtonText: 'OK'
-			});
-			return;
-		}
-
-		if (type === 'number' && newText && isNaN(Number(newText))) {
-			Swal.fire({
-				title: 'Invalid Number',
-				text: 'Please enter a valid number',
-				icon: 'warning',
-				confirmButtonText: 'OK'
-			});
-			return;
-		}
-
 		saving = true;
 		try {
-			// Replace the text in the PDF
 			const updatedPdfBytes = await replaceTextInPDF(
 				pdfFile,
 				page - 1,
@@ -428,13 +461,9 @@
 				scale
 			);
 
-			// Update the pdfFile with the new PDF
 			pdfFile = new File([updatedPdfBytes], pdfName, { type: 'application/pdf' });
-
-			// Reload the PDF to reflect the changes
 			await addPDF(pdfFile);
 
-			// Update detectedTags with the new text and mark as replaced
 			detectedTags = detectedTags.map(tag =>
 				tag.id === id
 					? { ...tag, displayText: newText || defaultText, newText, replaced: true }
@@ -446,7 +475,7 @@
 			console.error('Replacement error:', e);
 			Swal.fire({
 				title: 'Error!',
-				text: 'Failed to replace text: ' + e.message,
+				text: `Failed to replace text: ${e.message}`,
 				icon: 'error'
 			});
 		} finally {
@@ -475,10 +504,12 @@
 		const templateId = urlParams.get('templateId');
 		if (templateId) {
 			console.log('Loading template with ID:', templateId);
-			loadTemplate(templateId);
+			loadTemplate(templateId).then(() => {
+				fetchUserDetails();
+			});
 		} else {
 			console.warn('No templateId provided in URL');
-			errorMessage = 'select a template from the template list.';
+			errorMessage = 'Select a template from the template list.';
 		}
 		fetchProcessedPdfs();
 	});
@@ -509,7 +540,7 @@
 			{#if addingDrawing}
 				<div
 					class="fixed z-10 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 border-2 border-dashed border-sky-800 bg-white shadow-lg rounded-lg"
-					style="height: 50%; width:500px;"
+					style="height: 50%; width: 500px;"
 				>
 					<DrawingCanvas
 						on:finish={(e) => {
@@ -681,6 +712,6 @@
 	}
 
 	.tag-overlay {
-		pointer-events: none; /* Prevent the tag from interfering with PDF interactions */
+		pointer-events: none;
 	}
 </style>

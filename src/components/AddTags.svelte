@@ -1,38 +1,33 @@
 <script>
-	export let addTag;
+    export let addTag;
+
+    let tags = [
+		{ label: "Employee Name", slug: "employeeName" },
+        { label: "Employee Job Title", slug: "employeeJobTitle" },
+        { label: "Add Text", slug: "text" },
+        { label: "Add Signature", slug: "signature" },
+    ];
 </script>
 
 <main>
-	<div class="tags-title">Available Tags</div>
-	
-	<div class="tags">
-		<div class="search-box">
-			<input type="search" placeholder="Search tags" />
-		</div>
+    <div class="tags-title">Available Tags</div>
+    
+    <div class="tags">
+        <div class="search-box">
+            <input type="search" placeholder="Search tags" />
+        </div>
 
-		<hr class="hr-tag" />
-		<button class="tag-button" on:click={() => addTag('text')}>
-			<div class="label">
-				Add Text <span class="detail-text">Add text field</span>
-			</div>
-		</button>
-		<button class="tag-button" on:click={() => addTag('signature')}>
-			<div class="label">
-				Add Signature <span class="detail-text">Add signature field</span>
-			</div>
-		</button>
-		<button class="tag-button" on:click={() => addTag('number')}>
-			<div class="label">
-				Add Number <span class="detail-text">Add number field</span>
-			</div>
-		</button>
-		<button class="tag-button" on:click={() => addTag('email')}>
-			<div class="label">
-				Add Email <span class="detail-text">Add email field</span>
-			</div>
-		</button>
-	</div>
+        <hr class="hr-tag" />
+        {#each tags as tag (tag.slug)}
+            <button class="tag-button" on:click={() => addTag(tag.slug)}>
+                <div class="label">
+                    {tag.label} <span class="detail-text">Add {tag.label.toLowerCase()} field</span>
+                </div>
+            </button>
+        {/each}
+    </div>
 </main>
+
 
 <style>
 	main {

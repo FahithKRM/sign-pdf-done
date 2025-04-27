@@ -5,12 +5,11 @@
     const dispatch = createEventDispatcher();
     let inputValues = {};
 
-    // handle input changes
     function handleInputChange(tag, event) {
         const newValue = event.target.value;
         inputValues[tag.x + tag.y + tag.page + tag.type] = newValue;
         
-        if (newValue && tag.type !== 'signature') {
+        if (newValue && tag.type === 'text') {
             dispatch('replaceTag', { 
                 ...tag, 
                 newText: newValue 
@@ -18,7 +17,6 @@
         }
     }
 
-    // for signature drawing option
     function handleSignatureClick(tag) {
         if (tag.type === 'signature') {
             dispatch('signatureClicked', tag);
@@ -28,13 +26,17 @@
     function formatTagName(tag) {
         switch (tag.type) {
             case 'text':
-                return `Text${tag.count}`;
+                return `Text${tag.defaultText.replace('Text', '')}`;
             case 'signature':
-                return `Signature${tag.count}`;
+                return `Signature${tag.defaultText.replace('Signature', '')}`;
             case 'email':
-                return `Email${tag.count}`;
+                return `Email${tag.defaultText.replace('Email', '')}`;
             case 'number':
-                return `Number${tag.count}`;
+                return `Number${tag.defaultText.replace('Number', '')}`;
+            case 'employeeName':
+                return `EmployeeName${tag.defaultText.replace('EmployeeName', '')}`;
+            case 'employeeJobTitle':
+                return `EmployeeJobTitle${tag.defaultText.replace('EmployeeJobTitle', '')}`;
         }
     }
 </script>
@@ -54,21 +56,29 @@
                         >
                             {formatTagName(tag)} <span class="detail-text">Page {tag.page}</span>
                         </div>
-                        {#if tag.type !== 'signature'}
+                        {#if tag.type === 'text'}
                             <div class="input">
                                 <input
-                                    type={tag.type === 'number' ? 'number' : tag.type === 'email' ? 'email' : 'text'}
+                                    type="text"
                                     placeholder="Enter value"
                                     value={inputValues[tag.x + tag.y + tag.page + tag.type] || ''}
                                     on:blur={(e) => handleInputChange(tag, e)}
                                     on:keydown={(e) => e.key === 'Enter' && handleInputChange(tag, e)}
                                 />
                             </div>
-                        {:else}
+                        {:else if tag.type === 'signature'}
                             <div class="input">
                                 <input
                                     type="text"
                                     placeholder="Click label to draw"
+                                    disabled
+                                />
+                            </div>
+                        {:else}
+                            <div class="input">
+                                <input
+                                    type="text"
+                                    value={tag.displayText}
                                     disabled
                                 />
                             </div>
@@ -83,6 +93,7 @@
         {/if}
     </div>
 </main>
+
 
 <style>
     main {

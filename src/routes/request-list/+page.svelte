@@ -134,7 +134,6 @@
 						<td>{new Date(template.created_at).toLocaleDateString()}</td>
 						<td>
 							<button on:click={() => downloadTemplate(template.id)}>Download</button>
-							<button on:click={() => startEdit(template)}>Edit</button>
 							<button class="delete-button" on:click={() => deleteTemplate(template.id)}>Delete</button>
 						</td>
 					{/if}

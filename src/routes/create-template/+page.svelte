@@ -39,7 +39,9 @@
 		text: 0,
 		signature: 0,
 		number: 0,
-		email: 0
+		email: 0,
+		employeeName: 0,
+		employeeJobTitle: 0
 	};
 
 	let pendingTag = null;
@@ -99,22 +101,24 @@
 					text: 0,
 					signature: 0,
 					number: 0,
-					email: 0
+					email: 0,
+					employeeName: 0,
+					employeeJobTitle: 0
 				};
 				template.tags.forEach(tag => {
 					if (tag.type === 'text') tagCounters.text = Math.max(tagCounters.text, parseInt(tag.text.replace('Text', '')) || 0);
 					if (tag.type === 'signature') tagCounters.signature = Math.max(tagCounters.signature, parseInt(tag.text.replace('Signature', '')) || 0);
 					if (tag.type === 'number') tagCounters.number = Math.max(tagCounters.number, parseInt(tag.text.replace('Number', '')) || 0);
 					if (tag.type === 'email') tagCounters.email = Math.max(tagCounters.email, parseInt(tag.text.replace('Email', '')) || 0);
+					if (tag.type === 'employeeName') tagCounters.employeeName = Math.max(tagCounters.employeeName, parseInt(tag.text.replace('EmployeeName', '')) || 0);
+					if (tag.type === 'employeeJobTitle') tagCounters.employeeJobTitle = Math.max(tagCounters.employeeJobTitle, parseInt(tag.text.replace('EmployeeJobTitle', '')) || 0);
 				});
 			}
 
-			// Ensure the UI updates after loading
 			if (pages.length > 0) {
 				selectedPageIndex = 0;
 				currentindex = 0;
 				currentpage = pages[0];
-				// Force reactivity by reassigning
 				pages = [...pages];
 				allObjects = [...allObjects];
 			}
@@ -258,7 +262,6 @@
 		allObjects[selectedPageIndex] = [...allObjects[selectedPageIndex], object];
 		mouseIsWorking = false;
 		textOpened = false;
-		// Reset pending tag and preview
 		pendingTag = null;
 		previewVisible = false;
 	}
@@ -409,6 +412,12 @@
 			case 'email':
 				displayText = `Email${tagCounters.email}`;
 				break;
+			case 'employeeName':
+				displayText = `EmployeeName${tagCounters.employeeName}`;
+				break;
+			case 'employeeJobTitle':
+				displayText = `EmployeeJobTitle${tagCounters.employeeJobTitle}`;
+				break;
 		}
 		pendingTag = {
 			text: displayText,
@@ -481,7 +490,7 @@
 											originHeight={object.originHeight}
 											pageScale={pagesScale[selectedPageIndex]}
 										/>
-									{:else if ['text', 'signature', 'number', 'email'].includes(object.type)}
+									{:else if ['text', 'signature', 'number', 'email', 'employeeName', 'employeeJobTitle'].includes(object.type)}
 										<Text
 											on:update={(e) => updateObject(object.id, e.detail)}
 											on:delete={() => deleteObject(object.id)}
